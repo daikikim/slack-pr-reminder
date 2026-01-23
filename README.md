@@ -14,7 +14,7 @@ GitHubのOpenなPull Requestに対し、未レビューのAssigneeへSlackでリ
 ## インストール
 
 ```bash
-go install github.com/dkim/slack-pr-reminder/cmd/pr-reminder@latest
+go install github.com/dkim/slack-pr-reminder/src/cmd/pr-reminder@latest
 ```
 
 または、ソースからビルド:
@@ -22,7 +22,7 @@ go install github.com/dkim/slack-pr-reminder/cmd/pr-reminder@latest
 ```bash
 git clone https://github.com/dkim/slack-pr-reminder.git
 cd slack-pr-reminder
-go build -o pr-reminder ./cmd/pr-reminder
+go build -o pr-reminder ./src/cmd/pr-reminder
 ```
 
 ## 設定
@@ -56,6 +56,8 @@ SLACK_TOKEN=xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxx
 以下の権限が必要です:
 - `repo` - プライベートリポジトリの場合
 - `public_repo` - パブリックリポジトリのみの場合
+
+詳細な取得手順は [GitHub Token 取得ガイド](docs/github-token-setup.md) を参照してください。
 
 ### Slack Bot Token
 
@@ -151,6 +153,27 @@ https://github.com/owner/repo/pull/123
 経過時間: 2時間
 ```
 
+## ディレクトリ構成
+
+```
+slack-pr-reminder/
+├── src/
+│   ├── cmd/pr-reminder/main.go      # エントリーポイント
+│   └── internal/
+│       ├── model/                   # エンティティ・インターフェース
+│       ├── view/                    # Slackメッセージ生成
+│       ├── controller/              # ビジネスロジック
+│       └── infrastructure/          # 外部サービス連携
+│           ├── github/              # GitHub API クライアント
+│           ├── slack/               # Slack API クライアント
+│           ├── config/              # 設定ファイル読み込み
+│           └── time/                # 営業時間判定
+├── docs/                            # ドキュメント
+├── config.yaml                      # 設定ファイル
+├── .env                             # 環境変数（Git管理外）
+└── .env.example                     # 環境変数サンプル
+```
+
 ## アーキテクチャ
 
 ```
@@ -182,7 +205,7 @@ go test ./... -v
 ### ビルド
 
 ```bash
-go build -o pr-reminder ./cmd/pr-reminder
+go build -o pr-reminder ./src/cmd/pr-reminder
 ```
 
 ## 依存ライブラリ

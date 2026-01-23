@@ -1,0 +1,18 @@
+github:
+  repository: "daikikim/slack-pr-reminder"
+
+slack:
+  channel: "#zzz-test-ch"
+  mapping:
+    "daikikim": "U0770SURSJF"
+
+schedule:
+  business_hours:
+    start: "10:00"
+    end: "19:00"
+  timezone: "Asia/Tokyo"
+  holidays:
+    - "2025-01-04"
+  new_year_break:
+    start: "12-29"
+    end: "01-03"
