@@ -110,3 +110,12 @@ func (c *Client) HasReviewed(ctx context.Context, prNumber int, username string)
 
 	return false, nil
 }
+
+// IsMerged checks if a PR has been merged.
+func (c *Client) IsMerged(ctx context.Context, prNumber int) (bool, error) {
+	isMerged, _, err := c.client.PullRequests.IsMerged(ctx, c.owner, c.repo, prNumber)
+	if err != nil {
+		return false, fmt.Errorf("failed to check merge status for PR #%d: %w", prNumber, err)
+	}
+	return isMerged, nil
+}

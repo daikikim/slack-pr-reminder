@@ -9,6 +9,7 @@ import (
 type PRRepository interface {
 	FetchOpenPRs(ctx context.Context) ([]PR, error)
 	HasReviewed(ctx context.Context, prNumber int, username string) (bool, error)
+	IsMerged(ctx context.Context, prNumber int) (bool, error)
 }
 
 // Notifier defines the interface for sending notifications.
