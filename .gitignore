@@ -1,5 +1,5 @@
 # Binaries
-pr-reminder
+/pr-reminder
 *.exe
 *.exe~
 *.dll
