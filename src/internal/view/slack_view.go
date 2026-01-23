@@ -29,6 +29,20 @@ func (v *SlackView) FormatReminder(slackID string, pr model.PR, now time.Time) s
 	)
 }
 
+// FormatAuthorReminder generates a reminder message for PR author.
+func (v *SlackView) FormatAuthorReminder(slackID string, pr model.PR, now time.Time) string {
+	elapsed := now.Sub(pr.CreatedAt)
+	elapsedStr := formatDuration(elapsed)
+
+	return fmt.Sprintf(
+		"<@%s> PRがまだマージされていません。マージをお願いします\n*%s*\n%s\n経過時間: %s",
+		slackID,
+		pr.Title,
+		pr.URL,
+		elapsedStr,
+	)
+}
+
 func formatDuration(d time.Duration) string {
 	hours := int(d.Hours())
 	if hours < 24 {

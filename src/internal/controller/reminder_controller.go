@@ -71,13 +71,15 @@ func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now tim
 
 	log.Printf("Processing PR #%d: %s", pr.Number, pr.Title)
 
+	// TODO: テスト完了後にコメントを外すこと
+	// 既存のPRレビュー依頼のリマインド処理（コメントアウト）
+	/*
 	// Check each assignee
 	for _, assignee := range pr.Assignees {
-		// TODO: テスト完了後にコメントを外すこと
 		// Skip if assignee is the author
-		// if assignee == pr.Author {
-		// 	continue
-		// }
+		if assignee == pr.Author {
+			continue
+		}
 
 		// Check if assignee has already reviewed
 		hasReviewed, err := c.prRepo.HasReviewed(ctx, pr.Number, assignee)
@@ -104,6 +106,32 @@ func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now tim
 			log.Printf("Error sending reminder to %s: %v", slackID, err)
 			continue
 		}
+	}
+	*/
+
+	// PRがマージされていなかったらPR作成者にリマインドを送る
+	isMerged, err := c.prRepo.IsMerged(ctx, pr.Number)
+	if err != nil {
+		log.Printf("Error checking merge status for PR #%d: %v", pr.Number, err)
+		return err
+	}
+
+	if !isMerged {
+		// Get Slack ID for author
+		slackID, ok := c.userMapping[pr.Author]
+		if !ok {
+			log.Printf("No Slack mapping found for GitHub user (author): %s", pr.Author)
+			return nil
+		}
+
+		// Generate and send reminder to author
+		message := c.slackView.FormatAuthorReminder(slackID, pr, now)
+		if err := c.notifier.SendReminder(ctx, slackID, message); err != nil {
+			log.Printf("Error sending reminder to author %s: %v", slackID, err)
+			return err
+		}
+
+		log.Printf("Sent merge reminder to PR author: %s (PR #%d)", pr.Author, pr.Number)
 	}
 
 	return nil
