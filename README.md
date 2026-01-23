@@ -102,12 +102,46 @@ schedule:
 
 ## GitHub Actions
 
+### セットアップ手順
+
+GitHub Actionsで自動実行するには、以下の手順を完了してください：
+
+#### 1. GitHub Secrets の設定
+
+リポジトリの **Settings** → **Secrets and variables** → **Actions** で以下を設定：
+
+| Secret 名 | 値 | 説明 |
+|-----------|-----|------|
+| `GH_PAT` | Personal Access Token | PR 情報取得用（[取得方法](docs/github-token-setup.md)） |
+| `SLACK_TOKEN` | Slack Bot Token | Slack 通知用 |
+
+> **重要:** デフォルトの `GITHUB_TOKEN` は権限が限定されているため、別途 Personal Access Token (PAT) を `GH_PAT` として設定する必要があります。
+
+#### 2. ワークフローファイルの確認
+
+`.github/workflows/pr-reminder.yml` がデフォルトブランチ（通常は `main` または `master`）に存在することを確認してください。
+
+#### 3. Actions の有効化確認
+
+リポジトリの **Settings** → **Actions** → **General** で以下を確認：
+- ✅ Actions permissions が有効になっている
+- ✅ Workflow permissions が適切に設定されている
+
+#### 4. 手動実行でテスト
+
+1. GitHub リポジトリの **Actions** タブを開く
+2. 左サイドバーで「PR Reminder」ワークフローを選択
+3. 右上の「Run workflow」ボタンをクリック
+4. 実行結果を確認
+
 ### 自動実行スケジュール
 
 `.github/workflows/pr-reminder.yml` で定義：
 
 - **実行タイミング**: 平日 10:00〜19:00（JST）の毎時0分
 - **手動実行**: Actions タブから随時実行可能
+
+> **注意:** スケジュール実行は最大で5分程度の遅延が発生する場合があります。また、リポジトリが60日以上非アクティブな場合、スケジュール実行は一時停止されます。
 
 ### ワークフロー設定
 

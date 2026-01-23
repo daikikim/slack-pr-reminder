@@ -73,10 +73,11 @@ func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now tim
 
 	// Check each assignee
 	for _, assignee := range pr.Assignees {
+		// TODO: テスト完了後にコメントを外すこと
 		// Skip if assignee is the author
-		if assignee == pr.Author {
-			continue
-		}
+		// if assignee == pr.Author {
+		// 	continue
+		// }
 
 		// Check if assignee has already reviewed
 		hasReviewed, err := c.prRepo.HasReviewed(ctx, pr.Number, assignee)
