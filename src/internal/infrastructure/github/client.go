@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/dkim/slack-pr-reminder/src/internal/model"
@@ -39,6 +40,7 @@ func NewClient(token, repository string) *Client {
 
 // FetchOpenPRs fetches all open pull requests from the repository.
 func (c *Client) FetchOpenPRs(ctx context.Context) ([]model.PR, error) {
+	log.Printf("[GITHUB] Fetching open PRs from %s/%s", c.owner, c.repo)
 	opts := &github.PullRequestListOptions{
 		State: "open",
 		ListOptions: github.ListOptions{
@@ -47,13 +49,17 @@ func (c *Client) FetchOpenPRs(ctx context.Context) ([]model.PR, error) {
 	}
 
 	var allPRs []model.PR
+	page := 1
 
 	for {
+		log.Printf("[GITHUB] Fetching PRs page %d", page)
 		prs, resp, err := c.client.PullRequests.List(ctx, c.owner, c.repo, opts)
 		if err != nil {
+			log.Printf("[GITHUB] Error fetching PRs: %v", err)
 			return nil, fmt.Errorf("failed to fetch PRs: %w", err)
 		}
 
+		log.Printf("[GITHUB] Received %d PRs from page %d", len(prs), page)
 		for _, pr := range prs {
 			var assignees []string
 			for _, assignee := range pr.Assignees {
@@ -69,14 +75,19 @@ func (c *Client) FetchOpenPRs(ctx context.Context) ([]model.PR, error) {
 				Assignees: assignees,
 				CreatedAt: pr.GetCreatedAt().Time,
 			})
+			log.Printf("[GITHUB] Added PR #%d: %s (Author: %s, Created: %s)",
+				pr.GetNumber(), pr.GetTitle(), pr.GetUser().GetLogin(), pr.GetCreatedAt().Time.Format("2006-01-02 15:04:05"))
 		}
 
 		if resp.NextPage == 0 {
+			log.Printf("[GITHUB] No more pages, total PRs fetched: %d", len(allPRs))
 			break
 		}
 		opts.Page = resp.NextPage
+		page++
 	}
 
+	log.Printf("[GITHUB] Successfully fetched %d open PR(s) total", len(allPRs))
 	return allPRs, nil
 }
 
@@ -113,9 +124,12 @@ func (c *Client) HasReviewed(ctx context.Context, prNumber int, username string)
 
 // IsMerged checks if a PR has been merged.
 func (c *Client) IsMerged(ctx context.Context, prNumber int) (bool, error) {
+	log.Printf("[GITHUB] Checking merge status for PR #%d in %s/%s", prNumber, c.owner, c.repo)
 	isMerged, _, err := c.client.PullRequests.IsMerged(ctx, c.owner, c.repo, prNumber)
 	if err != nil {
+		log.Printf("[GITHUB] Error checking merge status for PR #%d: %v", prNumber, err)
 		return false, fmt.Errorf("failed to check merge status for PR #%d: %w", prNumber, err)
 	}
+	log.Printf("[GITHUB] PR #%d merge status: %v", prNumber, isMerged)
 	return isMerged, nil
 }

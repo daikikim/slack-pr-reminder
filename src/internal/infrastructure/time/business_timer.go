@@ -1,6 +1,7 @@
 package time
 
 import (
+	"log"
 	"time"
 
 	"github.com/dkim/slack-pr-reminder/src/internal/model"
@@ -25,42 +26,69 @@ func NewBusinessTimer(cfg model.ScheduleConfig) (*BusinessTimer, error) {
 // IsBusinessTime checks if the given time is within business hours.
 func (bt *BusinessTimer) IsBusinessTime(t time.Time) bool {
 	localTime := t.In(bt.location)
+	log.Printf("[TIME] Checking business time - Local time: %s, Weekday: %s",
+		localTime.Format("2006-01-02 15:04:05 MST"), localTime.Weekday().String())
 
 	// Check weekend
 	if bt.isWeekend(localTime) {
+		log.Printf("[TIME] Not business time: Weekend (%s)", localTime.Weekday().String())
 		return false
 	}
+	log.Printf("[TIME] Weekend check passed")
 
 	// Check holiday
 	if bt.isHoliday(localTime) {
+		log.Printf("[TIME] Not business time: Holiday")
 		return false
 	}
+	log.Printf("[TIME] Holiday check passed")
 
 	// Check new year break
 	if bt.isNewYearBreak(localTime) {
+		log.Printf("[TIME] Not business time: New year break")
 		return false
 	}
+	log.Printf("[TIME] New year break check passed")
 
 	// Check business hours
-	return bt.isWithinBusinessHours(localTime)
+	isWithinHours := bt.isWithinBusinessHours(localTime)
+	if !isWithinHours {
+		log.Printf("[TIME] Not business time: Outside business hours (current: %s, range: %s-%s)",
+			localTime.Format("15:04"), bt.cfg.BusinessHours.Start, bt.cfg.BusinessHours.End)
+		return false
+	}
+	log.Printf("[TIME] Business hours check passed (current: %s, range: %s-%s)",
+		localTime.Format("15:04"), bt.cfg.BusinessHours.Start, bt.cfg.BusinessHours.End)
+	log.Printf("[TIME] All business time checks passed - IS BUSINESS TIME")
+	return true
 }
 
 // ShouldRemind checks if a reminder should be sent based on PR creation time.
 // Reminders are sent every hour after the first hour since creation.
 func (bt *BusinessTimer) ShouldRemind(createdAt time.Time, now time.Time) bool {
 	elapsed := now.Sub(createdAt)
+	hours := elapsed.Hours()
+	fractionalHour := hours - float64(int(hours))
+	minutesPastHour := fractionalHour * 60
+
+	log.Printf("[TIME] ShouldRemind check - Created: %s, Now: %s, Elapsed: %s (%.2f hours, %.1f minutes past hour)",
+		createdAt.Format("2006-01-02 15:04:05"), now.Format("2006-01-02 15:04:05"), elapsed, hours, minutesPastHour)
 
 	// Must be at least 1 hour since creation
 	if elapsed < time.Hour {
+		log.Printf("[TIME] ShouldRemind: false (elapsed %s < 1 hour)", elapsed)
 		return false
 	}
 
 	// Check if we're at an hour boundary (within a 5-minute window)
-	hours := elapsed.Hours()
-	fractionalHour := hours - float64(int(hours))
-
 	// Allow a 5-minute window around the hour mark (0-5 minutes past)
-	return fractionalHour < (5.0 / 60.0)
+	shouldRemind := fractionalHour < (5.0 / 60.0)
+	if shouldRemind {
+		log.Printf("[TIME] ShouldRemind: true (%.1f minutes past hour, within 5-minute window)", minutesPastHour)
+	} else {
+		log.Printf("[TIME] ShouldRemind: false (%.1f minutes past hour, outside 5-minute window)", minutesPastHour)
+	}
+	return shouldRemind
 }
 
 func (bt *BusinessTimer) isWeekend(t time.Time) bool {
