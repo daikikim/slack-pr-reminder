@@ -87,41 +87,6 @@ func (c *ReminderController) Run(ctx context.Context) error {
 		log.Printf("[CONTROLLER] Found %d PRs pending review, sending batch reminder", len(pendingPRs))
 		message := c.slackView.FormatBatchReviewReminder(pendingPRs)
 
-		// Send to the configured channel
-		// The original implementation used SendReminder(slackID, message).
-		// We need to send to the channel. existing infrastructure/slack/client.go SendReminder takes a channelID/userID.
-		// config.yaml has slack.channel.
-		// The slackClient is initialized with cfg.Slack.Channel.
-		// Let's check infrastructure/slack/client.go to see if SendReminder uses the passed ID or stored channel.
-		// Wait, the interface Notifier.SendReminder(ctx, slackID, message) takes an ID.
-		// In main.go: slackClient := slack.NewClient(slackToken, cfg.Slack.Channel, *dryRun)
-		// Let's assume we can pass the channel name (from config) as the slackID to SendReminder.
-		// But wait, ReminderController doesn't have the channel configured in it directly,
-		// except maybe if we pass it or if the notifier handles it.
-		//
-		// Let's look at main.go again.
-		// cfg.Slack.Channel is passed to NewClient.
-		//
-		// If I look at infrastructure/slack/client.go (I should have checked this),
-		// usually SendMessage takes a channel ID.
-		//
-		// The ReminderController struct doesn't hold the main channel ID.
-		// I might need to add it, or usage conventions.
-		//
-		// The original code was: c.notifier.SendReminder(ctx, slackID, message) where slackID was a User ID for DM?
-		// "mapping" in config.yaml maps github user to slack ID.
-		//
-		// If I want to post to the #channel, I should pass the channel name/ID.
-		// However, I don't have access to the channel name in ReminderController.
-		// I should verify how Notifier is implemented or add Channel to ReminderController.
-		//
-		// Let's assume for now I need to update ReminderController to hold the channel ID.
-		// Or... I can check if Main.go passes it.
-		//
-		// Refactoring plan included: "Sendmessage(ctx, channel, message)"?
-		// No, I kept Notifier interface as is: SendReminder(ctx, slackID, message).
-		//
-		// I will modify ReminderController to store the channel ID.
 		if err := c.notifier.SendReminder(ctx, c.slackChannel, message); err != nil {
 			log.Printf("[CONTROLLER] Error sending batch reminder: %v", err)
 		}
