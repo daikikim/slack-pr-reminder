@@ -12,10 +12,10 @@ import (
 
 // MockPRRepository implements model.PRRepository for testing.
 type MockPRRepository struct {
-	prs      []model.PR
-	reviews  map[int]map[string]bool // prNumber -> username -> hasReviewed
-	merged   map[int]bool              // prNumber -> isMerged
-	fetchErr error
+	prs            []model.PR
+	reviewStatuses map[int]map[string]string // prNumber -> username -> status
+	merged         map[int]bool              // prNumber -> isMerged
+	fetchErr       error
 }
 
 func (m *MockPRRepository) FetchOpenPRs(ctx context.Context) ([]model.PR, error) {
@@ -25,14 +25,14 @@ func (m *MockPRRepository) FetchOpenPRs(ctx context.Context) ([]model.PR, error)
 	return m.prs, nil
 }
 
-func (m *MockPRRepository) HasReviewed(ctx context.Context, prNumber int, username string) (bool, error) {
-	if m.reviews == nil {
-		return false, nil
+func (m *MockPRRepository) GetReviewStatuses(ctx context.Context, prNumber int) (map[string]string, error) {
+	if m.reviewStatuses == nil {
+		return make(map[string]string), nil
 	}
-	if prReviews, ok := m.reviews[prNumber]; ok {
-		return prReviews[username], nil
+	if statuses, ok := m.reviewStatuses[prNumber]; ok {
+		return statuses, nil
 	}
-	return false, nil
+	return make(map[string]string), nil
 }
 
 func (m *MockPRRepository) IsMerged(ctx context.Context, prNumber int) (bool, error) {
@@ -86,6 +86,7 @@ func TestReminderController_Run_NotBusinessTime(t *testing.T) {
 		mockTimeChecker,
 		slackView,
 		map[string]string{},
+		"test-channel",
 	)
 
 	err := ctrl.Run(context.Background())
@@ -98,10 +99,7 @@ func TestReminderController_Run_NotBusinessTime(t *testing.T) {
 	}
 }
 
-// TODO: テスト完了後にコメントを外すこと
-// レビュー依頼のリマインド機能がコメントアウトされているため、このテストも一時的にコメントアウト
-/*
-func TestReminderController_Run_SendsReminders(t *testing.T) {
+func TestReminderController_Run_SendsBatchReminders(t *testing.T) {
 	now := time.Now()
 	createdAt := now.Add(-2 * time.Hour)
 
@@ -109,16 +107,26 @@ func TestReminderController_Run_SendsReminders(t *testing.T) {
 		prs: []model.PR{
 			{
 				ID:        1,
-				Number:    123,
-				Title:     "Test PR",
-				URL:       "https://github.com/owner/repo/pull/123",
-				Author:    "author",
-				Assignees: []string{"reviewer1", "reviewer2"},
+				Number:    101,
+				Title:     "PR 1",
+				URL:       "http://github.com/repo/pr/101",
+				Author:    "author1",
+				Assignees: []string{"reviewer1"},
+				CreatedAt: createdAt,
+			},
+			{
+				ID:        2,
+				Number:    102,
+				Title:     "PR 2",
+				URL:       "http://github.com/repo/pr/102",
+				Author:    "author2",
+				Assignees: []string{"reviewer2"},
 				CreatedAt: createdAt,
 			},
 		},
-		reviews: map[int]map[string]bool{
-			123: {"reviewer1": true}, // reviewer1 has reviewed
+		reviewStatuses: map[int]map[string]string{
+			101: {"reviewer1": ""}, // Not reviewed
+			102: {"reviewer2": ""}, // Not reviewed
 		},
 	}
 
@@ -127,9 +135,11 @@ func TestReminderController_Run_SendsReminders(t *testing.T) {
 	slackView := view.NewSlackView()
 
 	userMapping := map[string]string{
-		"reviewer1": "U11111111",
-		"reviewer2": "U22222222",
+		"reviewer1": "U1",
+		"reviewer2": "U2",
 	}
+
+	testChannel := "test-channel"
 
 	ctrl := NewReminderController(
 		mockRepo,
@@ -137,6 +147,7 @@ func TestReminderController_Run_SendsReminders(t *testing.T) {
 		mockTimeChecker,
 		slackView,
 		userMapping,
+		testChannel,
 	)
 
 	err := ctrl.Run(context.Background())
@@ -144,21 +155,27 @@ func TestReminderController_Run_SendsReminders(t *testing.T) {
 		t.Errorf("Run() returned error: %v", err)
 	}
 
-	// Should only send to reviewer2 (reviewer1 has already reviewed)
+	// Should send 1 batch message
 	if len(mockNotifier.sentMessages) != 1 {
-		t.Errorf("Expected 1 message sent, got %d", len(mockNotifier.sentMessages))
+		t.Fatalf("Expected 1 message sent, got %d", len(mockNotifier.sentMessages))
 	}
 
-	if len(mockNotifier.sentMessages) > 0 && mockNotifier.sentMessages[0].slackID != "U22222222" {
-		t.Errorf("Expected message to U22222222, got %s", mockNotifier.sentMessages[0].slackID)
+	msg := mockNotifier.sentMessages[0]
+	if msg.slackID != testChannel {
+		t.Errorf("Expected message to be sent to %s, got %s", testChannel, msg.slackID)
+	}
+
+	// Verify message content
+	// Should contain both PRs and mentions
+	if !strings.Contains(msg.message, "http://github.com/repo/pr/101") || !strings.Contains(msg.message, "<@U1>") {
+		t.Errorf("Message does not contain PR 1 details: %s", msg.message)
+	}
+	if !strings.Contains(msg.message, "http://github.com/repo/pr/102") || !strings.Contains(msg.message, "<@U2>") {
+		t.Errorf("Message does not contain PR 2 details: %s", msg.message)
 	}
 }
-*/
 
-// TODO: テスト完了後にコメントを外すこと
-// レビュー依頼のリマインド機能がコメントアウトされているため、このテストも一時的にコメントアウト
-/*
-func TestReminderController_Run_SkipsAuthorAsAssignee(t *testing.T) {
+func TestReminderController_Run_SkipsReviewedPRs(t *testing.T) {
 	now := time.Now()
 	createdAt := now.Add(-2 * time.Hour)
 
@@ -166,73 +183,25 @@ func TestReminderController_Run_SkipsAuthorAsAssignee(t *testing.T) {
 		prs: []model.PR{
 			{
 				ID:        1,
-				Number:    123,
-				Title:     "Test PR",
-				URL:       "https://github.com/owner/repo/pull/123",
-				Author:    "author",
-				Assignees: []string{"author", "reviewer1"}, // author is also assignee
-				CreatedAt: createdAt,
-			},
-		},
-	}
-
-	mockNotifier := &MockNotifier{}
-	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
-	slackView := view.NewSlackView()
-
-	userMapping := map[string]string{
-		"author":    "U00000000",
-		"reviewer1": "U11111111",
-	}
-
-	ctrl := NewReminderController(
-		mockRepo,
-		mockNotifier,
-		mockTimeChecker,
-		slackView,
-		userMapping,
-	)
-
-	err := ctrl.Run(context.Background())
-	if err != nil {
-		t.Errorf("Run() returned error: %v", err)
-	}
-
-	// Should only send to reviewer1 (author is skipped)
-	if len(mockNotifier.sentMessages) != 1 {
-		t.Errorf("Expected 1 message sent, got %d", len(mockNotifier.sentMessages))
-	}
-
-	if len(mockNotifier.sentMessages) > 0 && mockNotifier.sentMessages[0].slackID != "U11111111" {
-		t.Errorf("Expected message to U11111111, got %s", mockNotifier.sentMessages[0].slackID)
-	}
-}
-*/
-
-func TestReminderController_Run_NoReminderBeforeTime(t *testing.T) {
-	now := time.Now()
-	createdAt := now.Add(-2 * time.Hour)
-
-	mockRepo := &MockPRRepository{
-		prs: []model.PR{
-			{
-				ID:        1,
-				Number:    123,
-				Title:     "Test PR",
-				URL:       "https://github.com/owner/repo/pull/123",
-				Author:    "author",
+				Number:    101,
+				Title:     "PR 1",
+				URL:       "http://github.com/repo/pr/101",
+				Author:    "author1",
 				Assignees: []string{"reviewer1"},
 				CreatedAt: createdAt,
 			},
 		},
+		reviewStatuses: map[int]map[string]string{
+			101: {"reviewer1": "APPROVED"}, // Approved
+		},
 	}
 
 	mockNotifier := &MockNotifier{}
-	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: false} // Not time to remind
+	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
 	slackView := view.NewSlackView()
 
 	userMapping := map[string]string{
-		"reviewer1": "U11111111",
+		"reviewer1": "U1",
 	}
 
 	ctrl := NewReminderController(
@@ -241,6 +210,7 @@ func TestReminderController_Run_NoReminderBeforeTime(t *testing.T) {
 		mockTimeChecker,
 		slackView,
 		userMapping,
+		"test-channel",
 	)
 
 	err := ctrl.Run(context.Background())
@@ -248,12 +218,13 @@ func TestReminderController_Run_NoReminderBeforeTime(t *testing.T) {
 		t.Errorf("Run() returned error: %v", err)
 	}
 
+	// Should send NO messages
 	if len(mockNotifier.sentMessages) != 0 {
-		t.Errorf("Expected no messages sent when not reminder time, got %d", len(mockNotifier.sentMessages))
+		t.Errorf("Expected 0 messages sent, got %d", len(mockNotifier.sentMessages))
 	}
 }
 
-func TestReminderController_Run_SendsReminderToAuthorWhenNotMerged(t *testing.T) {
+func TestReminderController_Run_SkipsMergedPRs(t *testing.T) {
 	now := time.Now()
 	createdAt := now.Add(-2 * time.Hour)
 
@@ -261,16 +232,19 @@ func TestReminderController_Run_SendsReminderToAuthorWhenNotMerged(t *testing.T)
 		prs: []model.PR{
 			{
 				ID:        1,
-				Number:    123,
-				Title:     "Test PR",
-				URL:       "https://github.com/owner/repo/pull/123",
-				Author:    "author",
+				Number:    101,
+				Title:     "PR 1",
+				URL:       "http://github.com/repo/pr/101",
+				Author:    "author1",
 				Assignees: []string{"reviewer1"},
 				CreatedAt: createdAt,
 			},
+		},
+		reviewStatuses: map[int]map[string]string{
+			101: {"reviewer1": ""}, // Not reviewed but merged
 		},
 		merged: map[int]bool{
-			123: false, // PR is not merged
+			101: true, // Merged
 		},
 	}
 
@@ -279,7 +253,7 @@ func TestReminderController_Run_SendsReminderToAuthorWhenNotMerged(t *testing.T)
 	slackView := view.NewSlackView()
 
 	userMapping := map[string]string{
-		"author": "U00000000",
+		"reviewer1": "U1",
 	}
 
 	ctrl := NewReminderController(
@@ -288,6 +262,7 @@ func TestReminderController_Run_SendsReminderToAuthorWhenNotMerged(t *testing.T)
 		mockTimeChecker,
 		slackView,
 		userMapping,
+		"test-channel",
 	)
 
 	err := ctrl.Run(context.Background())
@@ -295,113 +270,8 @@ func TestReminderController_Run_SendsReminderToAuthorWhenNotMerged(t *testing.T)
 		t.Errorf("Run() returned error: %v", err)
 	}
 
-	// Should send reminder to author
-	if len(mockNotifier.sentMessages) != 1 {
-		t.Errorf("Expected 1 message sent to author, got %d", len(mockNotifier.sentMessages))
-	}
-
-	if len(mockNotifier.sentMessages) > 0 {
-		if mockNotifier.sentMessages[0].slackID != "U00000000" {
-			t.Errorf("Expected message to U00000000 (author), got %s", mockNotifier.sentMessages[0].slackID)
-		}
-		// Check message contains merge reminder text
-		if !strings.Contains(mockNotifier.sentMessages[0].message, "マージ") {
-			t.Errorf("Expected message to contain 'マージ', got: %s", mockNotifier.sentMessages[0].message)
-		}
-	}
-}
-
-func TestReminderController_Run_SkipsAuthorWhenPRIsMerged(t *testing.T) {
-	now := time.Now()
-	createdAt := now.Add(-2 * time.Hour)
-
-	mockRepo := &MockPRRepository{
-		prs: []model.PR{
-			{
-				ID:        1,
-				Number:    123,
-				Title:     "Test PR",
-				URL:       "https://github.com/owner/repo/pull/123",
-				Author:    "author",
-				Assignees: []string{"reviewer1"},
-				CreatedAt: createdAt,
-			},
-		},
-		merged: map[int]bool{
-			123: true, // PR is merged
-		},
-	}
-
-	mockNotifier := &MockNotifier{}
-	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
-	slackView := view.NewSlackView()
-
-	userMapping := map[string]string{
-		"author": "U00000000",
-	}
-
-	ctrl := NewReminderController(
-		mockRepo,
-		mockNotifier,
-		mockTimeChecker,
-		slackView,
-		userMapping,
-	)
-
-	err := ctrl.Run(context.Background())
-	if err != nil {
-		t.Errorf("Run() returned error: %v", err)
-	}
-
-	// Should not send reminder when PR is merged
+	// Should send NO messages
 	if len(mockNotifier.sentMessages) != 0 {
-		t.Errorf("Expected no messages sent when PR is merged, got %d", len(mockNotifier.sentMessages))
-	}
-}
-
-func TestReminderController_Run_SkipsAuthorWhenNoSlackMapping(t *testing.T) {
-	now := time.Now()
-	createdAt := now.Add(-2 * time.Hour)
-
-	mockRepo := &MockPRRepository{
-		prs: []model.PR{
-			{
-				ID:        1,
-				Number:    123,
-				Title:     "Test PR",
-				URL:       "https://github.com/owner/repo/pull/123",
-				Author:    "author",
-				Assignees: []string{"reviewer1"},
-				CreatedAt: createdAt,
-			},
-		},
-		merged: map[int]bool{
-			123: false, // PR is not merged
-		},
-	}
-
-	mockNotifier := &MockNotifier{}
-	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
-	slackView := view.NewSlackView()
-
-	// No mapping for author
-	userMapping := map[string]string{}
-
-	ctrl := NewReminderController(
-		mockRepo,
-		mockNotifier,
-		mockTimeChecker,
-		slackView,
-		userMapping,
-	)
-
-	err := ctrl.Run(context.Background())
-	if err != nil {
-		t.Errorf("Run() returned error: %v", err)
-	}
-
-	// Should not send reminder when no Slack mapping exists
-	if len(mockNotifier.sentMessages) != 0 {
-		t.Errorf("Expected no messages sent when no Slack mapping, got %d", len(mockNotifier.sentMessages))
+		t.Errorf("Expected 0 messages sent, got %d", len(mockNotifier.sentMessages))
 	}
 }

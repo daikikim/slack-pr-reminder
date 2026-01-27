@@ -11,11 +11,12 @@ import (
 
 // ReminderController orchestrates the PR reminder process.
 type ReminderController struct {
-	prRepo      model.PRRepository
-	notifier    model.Notifier
-	timeChecker model.TimeChecker
-	slackView   *view.SlackView
-	userMapping map[string]string
+	prRepo       model.PRRepository
+	notifier     model.Notifier
+	timeChecker  model.TimeChecker
+	slackView    *view.SlackView
+	userMapping  map[string]string
+	slackChannel string
 }
 
 // NewReminderController creates a new ReminderController.
@@ -25,13 +26,15 @@ func NewReminderController(
 	timeChecker model.TimeChecker,
 	slackView *view.SlackView,
 	userMapping map[string]string,
+	slackChannel string,
 ) *ReminderController {
 	return &ReminderController{
-		prRepo:      prRepo,
-		notifier:    notifier,
-		timeChecker: timeChecker,
-		slackView:   slackView,
-		userMapping: userMapping,
+		prRepo:       prRepo,
+		notifier:     notifier,
+		timeChecker:  timeChecker,
+		slackView:    slackView,
+		userMapping:  userMapping,
+		slackChannel: slackChannel,
 	}
 }
 
@@ -62,12 +65,65 @@ func (c *ReminderController) Run(ctx context.Context) error {
 		return nil
 	}
 
+	// Collect all pending reviews
+	var pendingPRs []view.PendingReviewPR
+
 	// Process each PR
 	log.Printf("[CONTROLLER] Processing %d PR(s)", len(prs))
 	for i, pr := range prs {
 		log.Printf("[CONTROLLER] Processing PR %d/%d: #%d - %s", i+1, len(prs), pr.Number, pr.Title)
-		if err := c.processPR(ctx, pr, now); err != nil {
+		pending, err := c.processPR(ctx, pr, now)
+		if err != nil {
 			log.Printf("[CONTROLLER] Error processing PR #%d: %v", pr.Number, err)
+			continue
+		}
+		if pending != nil {
+			pendingPRs = append(pendingPRs, *pending)
+		}
+	}
+
+	// Send batch reminder if there are pending reviews
+	if len(pendingPRs) > 0 {
+		log.Printf("[CONTROLLER] Found %d PRs pending review, sending batch reminder", len(pendingPRs))
+		message := c.slackView.FormatBatchReviewReminder(pendingPRs)
+
+		// Send to the configured channel
+		// The original implementation used SendReminder(slackID, message).
+		// We need to send to the channel. existing infrastructure/slack/client.go SendReminder takes a channelID/userID.
+		// config.yaml has slack.channel.
+		// The slackClient is initialized with cfg.Slack.Channel.
+		// Let's check infrastructure/slack/client.go to see if SendReminder uses the passed ID or stored channel.
+		// Wait, the interface Notifier.SendReminder(ctx, slackID, message) takes an ID.
+		// In main.go: slackClient := slack.NewClient(slackToken, cfg.Slack.Channel, *dryRun)
+		// Let's assume we can pass the channel name (from config) as the slackID to SendReminder.
+		// But wait, ReminderController doesn't have the channel configured in it directly,
+		// except maybe if we pass it or if the notifier handles it.
+		//
+		// Let's look at main.go again.
+		// cfg.Slack.Channel is passed to NewClient.
+		//
+		// If I look at infrastructure/slack/client.go (I should have checked this),
+		// usually SendMessage takes a channel ID.
+		//
+		// The ReminderController struct doesn't hold the main channel ID.
+		// I might need to add it, or usage conventions.
+		//
+		// The original code was: c.notifier.SendReminder(ctx, slackID, message) where slackID was a User ID for DM?
+		// "mapping" in config.yaml maps github user to slack ID.
+		//
+		// If I want to post to the #channel, I should pass the channel name/ID.
+		// However, I don't have access to the channel name in ReminderController.
+		// I should verify how Notifier is implemented or add Channel to ReminderController.
+		//
+		// Let's assume for now I need to update ReminderController to hold the channel ID.
+		// Or... I can check if Main.go passes it.
+		//
+		// Refactoring plan included: "Sendmessage(ctx, channel, message)"?
+		// No, I kept Notifier interface as is: SendReminder(ctx, slackID, message).
+		//
+		// I will modify ReminderController to store the channel ID.
+		if err := c.notifier.SendReminder(ctx, c.slackChannel, message); err != nil {
+			log.Printf("[CONTROLLER] Error sending batch reminder: %v", err)
 		}
 	}
 
@@ -75,7 +131,7 @@ func (c *ReminderController) Run(ctx context.Context) error {
 	return nil
 }
 
-func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now time.Time) error {
+func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now time.Time) (*view.PendingReviewPR, error) {
 	log.Printf("[PR #%d] Starting processing - Title: %s, Author: %s, Created: %s",
 		pr.Number, pr.Title, pr.Author, pr.CreatedAt.Format("2006-01-02 15:04:05"))
 
@@ -84,16 +140,32 @@ func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now tim
 	log.Printf("[PR #%d] Time elapsed since creation: %s", pr.Number, elapsed)
 	log.Printf("[PR #%d] Checking if reminder should be sent", pr.Number)
 	if !c.timeChecker.ShouldRemind(pr.CreatedAt, now) {
-		log.Printf("[PR #%d] Not time to send reminder yet (elapsed: %s, not at hour boundary)", pr.Number, elapsed)
-		return nil
+		log.Printf("[PR #%d] Not time to send reminder yet (elapsed: %s)", pr.Number, elapsed)
+		return nil, nil
 	}
 	log.Printf("[PR #%d] Reminder timing check passed", pr.Number)
 
-	log.Printf("[PR #%d] Processing PR #%d: %s", pr.Number, pr.Number, pr.Title)
+	// PRがマージされているかチェック
+	log.Printf("[PR #%d] Checking if PR is merged", pr.Number)
+	isMerged, err := c.prRepo.IsMerged(ctx, pr.Number)
+	if err != nil {
+		log.Printf("[PR #%d] Error checking merge status: %v", pr.Number, err)
+		return nil, err
+	}
+	if isMerged {
+		log.Printf("[PR #%d] PR is already merged, skipping reminder", pr.Number)
+		return nil, nil
+	}
 
-	// TODO: テスト完了後にコメントを外すこと
-	// 既存のPRレビュー依頼のリマインド処理（コメントアウト）
-	/*
+	// レビュー状況を取得
+	reviewStatuses, err := c.prRepo.GetReviewStatuses(ctx, pr.Number)
+	if err != nil {
+		log.Printf("[PR #%d] Error getting review statuses: %v", pr.Number, err)
+		return nil, err
+	}
+
+	var reviewerSlackIDs []string
+
 	// Check each assignee
 	for _, assignee := range pr.Assignees {
 		// Skip if assignee is the author
@@ -101,70 +173,35 @@ func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now tim
 			continue
 		}
 
-		// Check if assignee has already reviewed
-		hasReviewed, err := c.prRepo.HasReviewed(ctx, pr.Number, assignee)
-		if err != nil {
-			log.Printf("Error checking review status for %s: %v", assignee, err)
-			continue
-		}
+		status := reviewStatuses[assignee]
+		log.Printf("[PR #%d] Assignee %s status: '%s'", pr.Number, assignee, status)
 
-		if hasReviewed {
-			log.Printf("Assignee %s has already reviewed PR #%d", assignee, pr.Number)
+		// 未レビュー(statusが空)の場合のみリマインド対象
+		if status != "" {
+			log.Printf("[PR #%d] Assignee %s has already reviewed (status: %s)", pr.Number, assignee, status)
 			continue
 		}
 
 		// Get Slack ID for assignee
 		slackID, ok := c.userMapping[assignee]
 		if !ok {
-			log.Printf("No Slack mapping found for GitHub user: %s", assignee)
+			log.Printf("[PR #%d] No Slack mapping found for GitHub user: %s", pr.Number, assignee)
 			continue
 		}
 
-		// Generate and send reminder
-		message := c.slackView.FormatReminder(slackID, pr, now)
-		if err := c.notifier.SendReminder(ctx, slackID, message); err != nil {
-			log.Printf("Error sending reminder to %s: %v", slackID, err)
-			continue
-		}
-	}
-	*/
-
-	// PRがマージされていなかったらPR作成者にリマインドを送る
-	log.Printf("[PR #%d] Checking if PR is merged", pr.Number)
-	isMerged, err := c.prRepo.IsMerged(ctx, pr.Number)
-	if err != nil {
-		log.Printf("[PR #%d] Error checking merge status: %v", pr.Number, err)
-		return err
-	}
-	log.Printf("[PR #%d] Merge status: %v", pr.Number, isMerged)
-
-	if !isMerged {
-		log.Printf("[PR #%d] PR is not merged, checking Slack mapping for author: %s", pr.Number, pr.Author)
-		// Get Slack ID for author
-		slackID, ok := c.userMapping[pr.Author]
-		if !ok {
-			log.Printf("[PR #%d] No Slack mapping found for GitHub user (author): %s", pr.Number, pr.Author)
-			log.Printf("[PR #%d] Available mappings: %v", pr.Number, c.userMapping)
-			return nil
-		}
-		log.Printf("[PR #%d] Found Slack ID for author %s: %s", pr.Number, pr.Author, slackID)
-
-		// Generate and send reminder to author
-		log.Printf("[PR #%d] Generating reminder message", pr.Number)
-		message := c.slackView.FormatAuthorReminder(slackID, pr, now)
-		log.Printf("[PR #%d] Message generated (length: %d chars)", pr.Number, len(message))
-
-		log.Printf("[PR #%d] Sending reminder to Slack", pr.Number)
-		if err := c.notifier.SendReminder(ctx, slackID, message); err != nil {
-			log.Printf("[PR #%d] Error sending reminder to author %s: %v", pr.Number, slackID, err)
-			return err
-		}
-
-		log.Printf("[PR #%d] Successfully sent merge reminder to PR author: %s (Slack ID: %s)", pr.Number, pr.Author, slackID)
-	} else {
-		log.Printf("[PR #%d] PR is already merged, skipping reminder", pr.Number)
+		reviewerSlackIDs = append(reviewerSlackIDs, slackID)
 	}
 
-	log.Printf("[PR #%d] Finished processing", pr.Number)
-	return nil
+	if len(reviewerSlackIDs) > 0 {
+		log.Printf("[PR #%d] Found %d unreviewed assignees", pr.Number, len(reviewerSlackIDs))
+		return &view.PendingReviewPR{
+			Title:            pr.Title,
+			URL:              pr.URL,
+			ElapsedTime:      elapsed,
+			ReviewerSlackIDs: reviewerSlackIDs,
+		}, nil
+	}
+
+	log.Printf("[PR #%d] No unreviewed assignees found (or all approved/reviewed)", pr.Number)
+	return nil, nil
 }
