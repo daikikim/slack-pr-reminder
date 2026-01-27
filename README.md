@@ -9,7 +9,6 @@ GitHub Actionsで自動実行されます。
 - GitHubリポジトリからOpen状態のPRを取得
 - PR作成から1時間ごとにリマインダーを送信
 - 未レビューのAssigneeに通知（レビュー済みのユーザーはスキップ）
-- 全てのAssigneeが承認済み(Approved)の場合、Authorにマージリマインドを送信
 - 営業時間内（平日10:00-19:00 JST）のみ動作
 - 日本の祝日・年末年始休暇に対応
 
@@ -187,28 +186,24 @@ jobs:
 **通知の宛先ルール:**
 
 - **レビューリマインド**: 未レビューのAssigneeがいる場合、そのAssignee宛に送信
-- **マージリマインド**: Assignee全員が `APPROVED` の場合、Author宛に送信
 
 ### メッセージ形式
 
 ### レビューリマインド（Reviewer宛）
 
 ```
-@user PRのレビューをお願いします
-**PR Title Here**
+PRのレビューをお願いします
+
 https://github.com/owner/repo/pull/123
-経過時間: 2時間
+・対象者：<@user1>
+・経過時間：2時間
+
+https://github.com/owner/repo/pull/124
+・対象者：<@user2>, <@user3>
+・経過時間：5時間
 ```
 
-### マージリマインド（Author宛）
 
-```
-@author レビューが全て承認されました！
-マージをお願いします
-**PR Title Here**
-https://github.com/owner/repo/pull/123
-経過時間: 5時間
-```
 
 ## ローカル実行（オプション）
 
