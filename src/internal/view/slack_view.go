@@ -4,8 +4,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dkim/slack-pr-reminder/src/internal/model"
+	"strings"
 )
+
+// PendingReviewPR holds information for a PR pending review.
+type PendingReviewPR struct {
+	Title            string
+	URL              string
+	ElapsedTime      time.Duration
+	ReviewerSlackIDs []string
+}
 
 // SlackView generates Slack messages for PRs.
 type SlackView struct{}
@@ -15,32 +23,33 @@ func NewSlackView() *SlackView {
 	return &SlackView{}
 }
 
-// FormatReminder generates a reminder message for a PR.
-func (v *SlackView) FormatReminder(slackID string, pr model.PR, now time.Time) string {
-	elapsed := now.Sub(pr.CreatedAt)
-	elapsedStr := formatDuration(elapsed)
+// FormatBatchReviewReminder generates a single batch reminder message.
+func (v *SlackView) FormatBatchReviewReminder(prs []PendingReviewPR) string {
+	if len(prs) == 0 {
+		return ""
+	}
 
-	return fmt.Sprintf(
-		"<@%s> PRのレビューをお願いします\n*%s*\n%s\n経過時間: %s",
-		slackID,
-		pr.Title,
-		pr.URL,
-		elapsedStr,
-	)
-}
+	var sb strings.Builder
+	sb.WriteString("PRのレビューをお願いします\n\n")
 
-// FormatAuthorReminder generates a reminder message for PR author.
-func (v *SlackView) FormatAuthorReminder(slackID string, pr model.PR, now time.Time) string {
-	elapsed := now.Sub(pr.CreatedAt)
-	elapsedStr := formatDuration(elapsed)
+	for i, pr := range prs {
+		elapsedStr := formatDuration(pr.ElapsedTime)
 
-	return fmt.Sprintf(
-		"<@%s> PRがまだマージされていません。マージをお願いします\n*%s*\n%s\n経過時間: %s",
-		slackID,
-		pr.Title,
-		pr.URL,
-		elapsedStr,
-	)
+		// Format reviewers: <@ID1>, <@ID2>
+		var reviewers []string
+		for _, id := range pr.ReviewerSlackIDs {
+			reviewers = append(reviewers, fmt.Sprintf("<@%s>", id))
+		}
+		reviewersStr := strings.Join(reviewers, ", ")
+
+		sb.WriteString(fmt.Sprintf("%s\n・対象者：%s\n・経過時間：%s", pr.URL, reviewersStr, elapsedStr))
+
+		if i < len(prs)-1 {
+			sb.WriteString("\n\n")
+		}
+	}
+
+	return sb.String()
 }
 
 func formatDuration(d time.Duration) string {

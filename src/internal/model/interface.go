@@ -8,7 +8,7 @@ import (
 // PRRepository defines the interface for fetching pull requests.
 type PRRepository interface {
 	FetchOpenPRs(ctx context.Context) ([]PR, error)
-	HasReviewed(ctx context.Context, prNumber int, username string) (bool, error)
+	GetReviewStatuses(ctx context.Context, prNumber int) (map[string]string, error)
 	IsMerged(ctx context.Context, prNumber int) (bool, error)
 }
 

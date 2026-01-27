@@ -89,6 +89,7 @@ func main() {
 		timeChecker,
 		slackView,
 		cfg.Slack.Mapping,
+		cfg.Slack.Channel,
 	)
 	log.Printf("[STEP 9] Reminder controller created")
 

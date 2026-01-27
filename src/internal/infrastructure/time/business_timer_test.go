@@ -136,10 +136,10 @@ func TestShouldRemind(t *testing.T) {
 			expected:  true,
 		},
 		{
-			name:      "1 hour and 6 minutes (outside window)",
+			name:      "1 hour and 6 minutes (now valid)",
 			createdAt: baseTime,
 			now:       baseTime.Add(1*time.Hour + 6*time.Minute),
-			expected:  false,
+			expected:  true,
 		},
 		{
 			name:      "2 hours exactly",
@@ -148,10 +148,10 @@ func TestShouldRemind(t *testing.T) {
 			expected:  true,
 		},
 		{
-			name:      "1 hour 30 minutes (between windows)",
+			name:      "1 hour 30 minutes (now valid)",
 			createdAt: baseTime,
 			now:       baseTime.Add(1*time.Hour + 30*time.Minute),
-			expected:  false,
+			expected:  true,
 		},
 	}
 

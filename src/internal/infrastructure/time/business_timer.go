@@ -80,15 +80,8 @@ func (bt *BusinessTimer) ShouldRemind(createdAt time.Time, now time.Time) bool {
 		return false
 	}
 
-	// Check if we're at an hour boundary (within a 5-minute window)
-	// Allow a 5-minute window around the hour mark (0-5 minutes past)
-	shouldRemind := fractionalHour < (5.0 / 60.0)
-	if shouldRemind {
-		log.Printf("[TIME] ShouldRemind: true (%.1f minutes past hour, within 5-minute window)", minutesPastHour)
-	} else {
-		log.Printf("[TIME] ShouldRemind: false (%.1f minutes past hour, outside 5-minute window)", minutesPastHour)
-	}
-	return shouldRemind
+	log.Printf("[TIME] ShouldRemind: true (elapsed %s >= 1 hour)", elapsed)
+	return true
 }
 
 func (bt *BusinessTimer) isWeekend(t time.Time) bool {
