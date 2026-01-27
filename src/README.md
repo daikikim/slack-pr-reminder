@@ -90,7 +90,7 @@ https://github.com/owner/repo/pull/124
 
 ### 必要な環境
 
-- Go 1.21 以上
+- Go 1.25 以上
 - GitHub Personal Access Token (scope: `repo`)
 - Slack Bot Token (scope: `chat:write`)
 
