@@ -57,6 +57,17 @@ GitHub には2種類の Personal Access Token があります:
 
    ⚠️ **重要**: トークンは一度しか表示されません。必ずコピーして安全な場所に保存してください。
 
+9. **Organization の承認を待つ（Organization リポジトリの場合）**
+
+   Organization のリポジトリに対して Fine-grained PAT を作成した場合、**Organization の管理者による承認が必要**です。
+
+   - トークン作成後、Organization の管理者に承認リクエストが自動送信されます
+   - 管理者が承認するまで、トークンは使用できません
+   - 承認状況は **Settings** > **Developer settings** > **Personal access tokens** > **Fine-grained tokens** で確認できます
+   - トークンの状態が「Pending approval」から「Active」になれば使用可能です
+
+   💡 **ヒント**: 承認が必要かどうかは Organization の設定によります。すぐに使用できる場合もあります。
+
 ### トークンの保存
 
 ```bash
