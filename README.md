@@ -2,284 +2,115 @@
 
 GitHubのOpenなPull Requestに対し、未レビューのAssigneeへSlackでリマインドを送るツールです。
 
-GitHub Actionsで自動実行されます。
+## セットアップ
 
-## 機能
+### 前提条件
 
-- GitHubリポジトリからOpen状態のPRを取得
-- PR作成から1時間ごとにリマインダーを送信
-- 未レビューのAssigneeに通知（レビュー済みのユーザーはスキップ）
-- 営業時間内（平日10:00-19:00 JST）のみ動作
-- 日本の祝日・年末年始休暇に対応
+- GitHub リポジトリへのアクセス権限
+- Slack ワークスペースの管理者権限（Bot作成のため）
+- GitHub Actions が有効なリポジトリ
 
-## クイックスタート
+### インストール手順
 
-### 1. リポジトリをフォーク/クローン
+#### 1. ツールコードの配置
+
+このディレクトリ一式を、対象リポジトリの `tools/pr_reminder/` に配置してください。
 
 ```bash
-git clone https://github.com/daikikim/slack-pr-reminder.git
-cd slack-pr-reminder
+# 例: 対象リポジトリのルートで実行
+mkdir -p tools/pr_reminder
+# このリポジトリの内容を tools/pr_reminder/ にコピー
 ```
 
-### 2. 設定ファイルを編集
+#### 2. セットアップスクリプトの実行
 
-`config.yaml` を編集して、対象リポジトリとSlack設定を入力：
+配置したディレクトリで `setup.sh` を実行します。
+
+```bash
+cd tools/pr_reminder
+chmod +x setup.sh
+./setup.sh
+```
+
+スクリプトが以下の処理を自動で行います：
+- `config.yaml` をテンプレートからコピー
+- `.github/workflows/pr-reminder.yml` を配置
+- ワークフロー内のパスを自動調整
+
+#### 3. 設定ファイルの編集
+
+`tools/pr_reminder/config.yaml` を編集し、以下の項目を設定してください：
 
 ```yaml
 github:
   repository: "owner/repo"  # 対象リポジトリ
 
 slack:
-  channel: "#pr-reminders"  # 通知先チャンネル
-  mapping:                  # GitHubユーザー名 → Slack ID
-    "github_user1": "U12345678"
-    "github_user2": "U87654321"
+  channel: "#your-channel"  # 通知先チャンネル
+  mapping:
+    "github_user1": "U12345678"  # GitHubユーザー名: Slack Member ID
 ```
 
-### 3. GitHub Secrets を設定
+**Slack Member ID の確認方法:**
+1. Slack でユーザーのプロフィールを開く
+2. 「その他」→「メンバーIDをコピー」
 
-リポジトリの **Settings → Secrets and variables → Actions** で以下を設定：
+#### 4. GitHub Secrets の設定
 
-| Secret 名 | 説明 |
-|-----------|------|
-| `GH_PAT` | GitHub Personal Access Token（[取得方法](docs/github-token-setup.md)） |
-| `SLACK_TOKEN` | Slack Bot Token |
+リポジトリの **Settings** > **Secrets and variables** > **Actions** で以下を設定：
 
-### 4. 自動実行開始
+| Secret 名 | 説明 | 取得方法 |
+|-----------|------|----------|
+| `GH_PAT` | GitHub Personal Access Token | [GitHub Settings](https://github.com/settings/tokens) で作成。Scope: `repo` |
+| `SLACK_TOKEN` | Slack Bot Token | [Slack API](https://api.slack.com/apps) でアプリ作成。Scope: `chat:write` |
 
-設定をプッシュすると、GitHub Actionsが平日10:00〜19:00（JST）に毎時自動実行されます。
-
-**手動実行でテスト:**
-1. GitHub リポジトリの **Actions** タブを開く
-2. **PR Reminder** ワークフローを選択
-3. **Run workflow** をクリック
-
-## 設定
-
-### 環境変数
-
-| 変数名 | 説明 | 必須 |
-|--------|------|------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token | Yes |
-| `SLACK_TOKEN` | Slack Bot Token | Yes |
-
-### GitHub Token
-
-以下の権限が必要です:
-- `repo` - プライベートリポジトリの場合
-- `public_repo` - パブリックリポジトリのみの場合
-
-詳細な取得手順は [GitHub Token 取得ガイド](docs/github-token-setup.md) を参照してください。
-
-### Slack Bot Token
-
-Slack Appを作成し、以下の権限を付与してください:
-- `chat:write` - メッセージ送信用
-
-### 設定ファイル (config.yaml)
-
-```yaml
-github:
-  repository: "owner/repo"  # 対象リポジトリ（owner/repo形式）
-
-slack:
-  channel: "#pr-reminders"  # 通知先チャンネル
-  mapping:                  # GitHubユーザー名 → Slack ID のマッピング
-    "github_user1": "U12345678"
-    "github_user2": "U87654321"
-
-schedule:
-  business_hours:
-    start: "10:00"          # 営業開始時刻
-    end: "19:00"            # 営業終了時刻
-  timezone: "Asia/Tokyo"    # タイムゾーン
-  holidays:                 # 追加の休日（YYYY-MM-DD形式）
-    - "2025-01-04"
-  new_year_break:           # 年末年始休暇（MM-DD形式）
-    start: "12-29"
-    end: "01-03"
-```
-
-## GitHub Actions
-
-### セットアップ手順
-
-GitHub Actionsで自動実行するには、以下の手順を完了してください：
-
-#### 1. GitHub Secrets の設定
-
-リポジトリの **Settings** → **Secrets and variables** → **Actions** で以下を設定：
-
-| Secret 名 | 値 | 説明 |
-|-----------|-----|------|
-| `GH_PAT` | Personal Access Token | PR 情報取得用（[取得方法](docs/github-token-setup.md)） |
-| `SLACK_TOKEN` | Slack Bot Token | Slack 通知用 |
-
-> **重要:** デフォルトの `GITHUB_TOKEN` は権限が限定されているため、別途 Personal Access Token (PAT) を `GH_PAT` として設定する必要があります。
-
-#### 2. ワークフローファイルの確認
-
-`.github/workflows/pr-reminder.yml` がデフォルトブランチ（通常は `main` または `master`）に存在することを確認してください。
-
-#### 3. Actions の有効化確認
-
-リポジトリの **Settings** → **Actions** → **General** で以下を確認：
-- ✅ Actions permissions が有効になっている
-- ✅ Workflow permissions が適切に設定されている
-
-#### 4. 手動実行でテスト
-
-1. GitHub リポジトリの **Actions** タブを開く
-2. 左サイドバーで「PR Reminder」ワークフローを選択
-3. 右上の「Run workflow」ボタンをクリック
-4. 実行結果を確認
-
-### 自動実行スケジュール
-
-`.github/workflows/pr-reminder.yml` で定義：
-
-- **実行タイミング**: 平日 10:00〜19:00（JST）の毎時0分
-- **手動実行**: Actions タブから随時実行可能
-
-> **注意:** スケジュール実行は最大で5分程度の遅延が発生する場合があります。また、リポジトリが60日以上非アクティブな場合、スケジュール実行は一時停止されます。
-
-### ワークフロー設定
-
-```yaml
-name: PR Reminder
-
-on:
-  schedule:
-    - cron: '0 1-10 * * 1-5'  # UTC時間（JST 10:00-19:00）
-  workflow_dispatch:          # 手動実行
-
-jobs:
-  remind:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-      - run: go build -o pr-reminder ./src/cmd/pr-reminder
-      - run: ./pr-reminder -config config.yaml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-          SLACK_TOKEN: ${{ secrets.SLACK_TOKEN }}
-```
-
-## リマインダーの動作
-
-### 送信タイミング
-
-- PR作成から1時間以上経過している場合、実行タイミングでリマインダーを送信
-- 実行頻度はCronの設定（GitHub Actionsなど）に依存します（通常は1時間に1回）
-
-### 送信条件
-
-以下の条件をすべて満たす場合にリマインダーを送信:
-
-1. 現在時刻が営業時間内（平日10:00-19:00）
-2. 祝日・年末年始でない
-3. PR作成から1時間以上経過している
-
-**通知の宛先ルール:**
-
-- **レビューリマインド**: 未レビューのAssigneeがいる場合、そのAssignee宛に送信
-
-### メッセージ形式
-
-### レビューリマインド（Reviewer宛）
-
-```
-PRのレビューをお願いします
-
-https://github.com/owner/repo/pull/123
-・対象者：<@user1>
-・経過時間：2時間
-
-https://github.com/owner/repo/pull/124
-・対象者：<@user2>, <@user3>
-・経過時間：5時間
-```
-
-
-
-## ローカル実行（オプション）
-
-GitHub Actions を使わずにローカルで実行することも可能です。
-
-### ビルド
+#### 5. コミット & プッシュ
 
 ```bash
-go build -o pr-reminder ./src/cmd/pr-reminder
+git add .
+git commit -m "Add Slack PR Reminder"
+git push
 ```
 
-### 実行
+#### 6. 動作確認
 
-```bash
-# .env ファイルを作成
-cp .env.example .env
-vim .env  # トークンを設定
+GitHub の **Actions** タブから **PR Reminder** ワークフローを手動実行し、動作を確認してください。
 
-# 実行
-./pr-reminder -config config.yaml
+## 機能
 
-# Dry-run（Slack送信なし）
-./pr-reminder -dry-run -config config.yaml
-```
+- GitHubリポジトリからOpen状態のPRを取得
+- PR作成後1時間以上経過したPRは、毎時未レビュー者にリマインドを送信
+- 未レビューのAssigneeに通知（レビュー済みのユーザーはスキップ）
+- 営業時間内（平日10:00-19:00 JST）のみ動作
+- 日本の祝日・年末年始休暇に対応
 
-### コマンドラインオプション
+## 自動実行スケジュール
 
-| オプション | デフォルト | 説明 |
-|-----------|-----------|------|
-| `-config` | `config.yaml` | 設定ファイルのパス |
-| `-env` | `.env` | 環境変数ファイルのパス |
-| `-dry-run` | `false` | Dry-runモード（Slack送信なし） |
+デフォルトでは、平日 10:00〜19:00（JST）の毎時0分に自動実行されます。
 
-### Cron での定期実行
+スケジュールを変更したい場合は、`.github/workflows/pr-reminder.yml` の `cron` 設定を編集してください。
 
-ローカルマシンやサーバーで定期実行する場合は [Cron 設定ガイド](docs/cron-setup.md) を参照してください。
+## トラブルシューティング
 
-## ディレクトリ構成
+### リマインダーが送信されない
 
-```
-slack-pr-reminder/
-├── .github/workflows/           # GitHub Actions
-│   └── pr-reminder.yml
-├── src/
-│   ├── cmd/pr-reminder/         # エントリーポイント
-│   └── internal/
-│       ├── model/               # エンティティ・インターフェース
-│       ├── view/                # Slackメッセージ生成
-│       ├── controller/          # ビジネスロジック
-│       └── infrastructure/      # 外部サービス連携
-├── docs/                        # ドキュメント
-├── config.yaml                  # 設定ファイル
-└── .env.example                 # 環境変数サンプル
-```
+1. GitHub Actions のログを確認
+2. `config.yaml` の設定を確認（リポジトリ名、チャンネル名、マッピング）
+3. GitHub Secrets が正しく設定されているか確認
+4. 営業時間内に実行されているか確認
 
-## 開発
+### Slack に通知が届かない
 
-### テスト実行
+1. Slack Bot Token の権限を確認（`chat:write` が必要）
+2. Bot がチャンネルに追加されているか確認
+3. チャンネル名が正しいか確認（`#` を含む）
 
-```bash
-go test ./... -v
-```
+## 詳細ドキュメント
 
-### ビルド
-
-```bash
-go build -o pr-reminder ./src/cmd/pr-reminder
-```
-
-## 依存ライブラリ
-
-- [google/go-github](https://github.com/google/go-github) - GitHub API クライアント
-- [slack-go/slack](https://github.com/slack-go/slack) - Slack API クライアント
-- [holiday-jp/holiday_jp-go](https://github.com/holiday-jp/holiday_jp-go) - 日本の祝日判定
-- [joho/godotenv](https://github.com/joho/godotenv) - .env ファイル読み込み
-- [gopkg.in/yaml.v3](https://gopkg.in/yaml.v3) - YAML パーサー
+- [開発者向けドキュメント](src/README.md) - 内部実装や開発に関する情報
+- [セットアップガイド](docs/SETUP_GUIDE.md) - 詳細なセットアップ手順
+- [GitHub Token 取得方法](docs/github-token-setup.md)
+- [Cron 設定ガイド](docs/cron-setup.md) - ローカル/サーバーでの定期実行
 
 ## ライセンス
 
