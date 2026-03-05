@@ -275,3 +275,266 @@ func TestReminderController_Run_SkipsMergedPRs(t *testing.T) {
 		t.Errorf("Expected 0 messages sent, got %d", len(mockNotifier.sentMessages))
 	}
 }
+
+func TestReminderController_Run_UsesRequestedReviewersWhenAssigneeIsEmpty(t *testing.T) {
+	now := time.Now()
+	createdAt := now.Add(-2 * time.Hour)
+
+	mockRepo := &MockPRRepository{
+		prs: []model.PR{
+			{
+				ID:                 1,
+				Number:             201,
+				Title:              "PR with requested reviewer",
+				URL:                "http://github.com/repo/pr/201",
+				Author:             "author1",
+				Assignees:          []string{},
+				RequestedReviewers: []string{"reviewer1"},
+				CreatedAt:          createdAt,
+			},
+		},
+		reviewStatuses: map[int]map[string]string{
+			201: {"reviewer1": ""}, // Not reviewed
+		},
+	}
+
+	mockNotifier := &MockNotifier{}
+	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
+	slackView := view.NewSlackView()
+
+	userMapping := map[string]string{
+		"reviewer1": "U1",
+	}
+
+	ctrl := NewReminderController(
+		mockRepo,
+		mockNotifier,
+		mockTimeChecker,
+		slackView,
+		userMapping,
+		"test-channel",
+	)
+
+	err := ctrl.Run(context.Background())
+	if err != nil {
+		t.Errorf("Run() returned error: %v", err)
+	}
+
+	if len(mockNotifier.sentMessages) != 1 {
+		t.Fatalf("Expected 1 message sent, got %d", len(mockNotifier.sentMessages))
+	}
+
+	msg := mockNotifier.sentMessages[0]
+	if !strings.Contains(msg.message, "http://github.com/repo/pr/201") || !strings.Contains(msg.message, "<@U1>") {
+		t.Errorf("Message does not contain requested reviewer details: %s", msg.message)
+	}
+}
+
+func TestReminderController_Run_DeduplicatesReviewerFromAssigneeAndRequestedReviewers(t *testing.T) {
+	now := time.Now()
+	createdAt := now.Add(-2 * time.Hour)
+
+	mockRepo := &MockPRRepository{
+		prs: []model.PR{
+			{
+				ID:                 1,
+				Number:             202,
+				Title:              "PR with duplicate reviewer",
+				URL:                "http://github.com/repo/pr/202",
+				Author:             "author1",
+				Assignees:          []string{"reviewer1"},
+				RequestedReviewers: []string{"reviewer1"},
+				CreatedAt:          createdAt,
+			},
+		},
+		reviewStatuses: map[int]map[string]string{
+			202: {"reviewer1": ""}, // Not reviewed
+		},
+	}
+
+	mockNotifier := &MockNotifier{}
+	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
+	slackView := view.NewSlackView()
+
+	userMapping := map[string]string{
+		"reviewer1": "U1",
+	}
+
+	ctrl := NewReminderController(
+		mockRepo,
+		mockNotifier,
+		mockTimeChecker,
+		slackView,
+		userMapping,
+		"test-channel",
+	)
+
+	err := ctrl.Run(context.Background())
+	if err != nil {
+		t.Errorf("Run() returned error: %v", err)
+	}
+
+	if len(mockNotifier.sentMessages) != 1 {
+		t.Fatalf("Expected 1 message sent, got %d", len(mockNotifier.sentMessages))
+	}
+
+	msg := mockNotifier.sentMessages[0]
+	if mentions := strings.Count(msg.message, "<@U1>"); mentions != 1 {
+		t.Errorf("Expected reviewer mention once, got %d mentions. Message: %s", mentions, msg.message)
+	}
+}
+
+func TestReminderController_Run_SkipsRequestedReviewerWhenAlreadyReviewed(t *testing.T) {
+	now := time.Now()
+	createdAt := now.Add(-2 * time.Hour)
+
+	mockRepo := &MockPRRepository{
+		prs: []model.PR{
+			{
+				ID:                 1,
+				Number:             203,
+				Title:              "PR requested reviewer already reviewed",
+				URL:                "http://github.com/repo/pr/203",
+				Author:             "author1",
+				Assignees:          []string{},
+				RequestedReviewers: []string{"reviewer1"},
+				CreatedAt:          createdAt,
+			},
+		},
+		reviewStatuses: map[int]map[string]string{
+			203: {"reviewer1": "APPROVED"},
+		},
+	}
+
+	mockNotifier := &MockNotifier{}
+	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
+	slackView := view.NewSlackView()
+
+	userMapping := map[string]string{
+		"reviewer1": "U1",
+	}
+
+	ctrl := NewReminderController(
+		mockRepo,
+		mockNotifier,
+		mockTimeChecker,
+		slackView,
+		userMapping,
+		"test-channel",
+	)
+
+	err := ctrl.Run(context.Background())
+	if err != nil {
+		t.Errorf("Run() returned error: %v", err)
+	}
+
+	if len(mockNotifier.sentMessages) != 0 {
+		t.Errorf("Expected 0 messages sent, got %d", len(mockNotifier.sentMessages))
+	}
+}
+
+func TestReminderController_Run_SkipsAuthorInRequestedReviewers(t *testing.T) {
+	now := time.Now()
+	createdAt := now.Add(-2 * time.Hour)
+
+	mockRepo := &MockPRRepository{
+		prs: []model.PR{
+			{
+				ID:                 1,
+				Number:             204,
+				Title:              "PR author also in requested reviewers",
+				URL:                "http://github.com/repo/pr/204",
+				Author:             "author1",
+				Assignees:          []string{},
+				RequestedReviewers: []string{"author1", "reviewer2"},
+				CreatedAt:          createdAt,
+			},
+		},
+		reviewStatuses: map[int]map[string]string{
+			204: {
+				"author1":   "",
+				"reviewer2": "",
+			},
+		},
+	}
+
+	mockNotifier := &MockNotifier{}
+	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
+	slackView := view.NewSlackView()
+
+	userMapping := map[string]string{
+		"author1":   "U_AUTHOR",
+		"reviewer2": "U2",
+	}
+
+	ctrl := NewReminderController(
+		mockRepo,
+		mockNotifier,
+		mockTimeChecker,
+		slackView,
+		userMapping,
+		"test-channel",
+	)
+
+	err := ctrl.Run(context.Background())
+	if err != nil {
+		t.Errorf("Run() returned error: %v", err)
+	}
+
+	if len(mockNotifier.sentMessages) != 1 {
+		t.Fatalf("Expected 1 message sent, got %d", len(mockNotifier.sentMessages))
+	}
+
+	msg := mockNotifier.sentMessages[0]
+	if strings.Contains(msg.message, "<@U_AUTHOR>") {
+		t.Errorf("Expected author mention to be skipped: %s", msg.message)
+	}
+	if !strings.Contains(msg.message, "<@U2>") {
+		t.Errorf("Expected reviewer2 mention in message: %s", msg.message)
+	}
+}
+
+func TestReminderController_Run_SkipsRequestedReviewerWithoutSlackMapping(t *testing.T) {
+	now := time.Now()
+	createdAt := now.Add(-2 * time.Hour)
+
+	mockRepo := &MockPRRepository{
+		prs: []model.PR{
+			{
+				ID:                 1,
+				Number:             205,
+				Title:              "PR with unmapped requested reviewer",
+				URL:                "http://github.com/repo/pr/205",
+				Author:             "author1",
+				Assignees:          []string{},
+				RequestedReviewers: []string{"reviewer1"},
+				CreatedAt:          createdAt,
+			},
+		},
+		reviewStatuses: map[int]map[string]string{
+			205: {"reviewer1": ""}, // Not reviewed
+		},
+	}
+
+	mockNotifier := &MockNotifier{}
+	mockTimeChecker := &MockTimeChecker{isBusinessTime: true, shouldRemind: true}
+	slackView := view.NewSlackView()
+
+	ctrl := NewReminderController(
+		mockRepo,
+		mockNotifier,
+		mockTimeChecker,
+		slackView,
+		map[string]string{}, // No mapping
+		"test-channel",
+	)
+
+	err := ctrl.Run(context.Background())
+	if err != nil {
+		t.Errorf("Run() returned error: %v", err)
+	}
+
+	if len(mockNotifier.sentMessages) != 0 {
+		t.Errorf("Expected 0 messages sent, got %d", len(mockNotifier.sentMessages))
+	}
+}
