@@ -1,6 +1,6 @@
 # Slack PR Reminder
 
-GitHubのOpenなPull Requestに対し、未レビューのAssigneeへSlackでリマインドを送るツールです。
+GitHubのOpenなPull Requestに対し、未レビューのAssignee/Requested ReviewerへSlackでリマインドを送るツールです。
 
 ## セットアップ
 
@@ -80,7 +80,7 @@ GitHub の **Actions** タブから **PR Reminder** ワークフローを手動�
 
 - GitHubリポジトリからOpen状態のPRを取得
 - PR作成後1時間以上経過したPRは、毎時未レビュー者にリマインドを送信
-- 未レビューのAssigneeに通知（レビュー済みのユーザーはスキップ）
+- 未レビューのAssignee/Requested Reviewerに通知（レビュー済みのユーザーはスキップ）
 - 営業時間内（平日10:00-19:00 JST）のみ動作
 - 日本の祝日・年末年始休暇に対応
 

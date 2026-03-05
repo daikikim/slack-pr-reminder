@@ -129,36 +129,50 @@ func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now tim
 		return nil, err
 	}
 
-	var reviewerSlackIDs []string
+	reviewTargets := collectReviewTargets(pr.Assignees, pr.RequestedReviewers)
+	log.Printf("[PR #%d] Review target summary - assignees: %d, requested reviewers: %d, unique targets: %d",
+		pr.Number, len(pr.Assignees), len(pr.RequestedReviewers), len(reviewTargets))
+	if len(reviewTargets) == 0 {
+		log.Printf("[PR #%d] No review targets found from assignees/requested reviewers", pr.Number)
+		return nil, nil
+	}
 
-	// Check each assignee
-	for _, assignee := range pr.Assignees {
-		// Skip if assignee is the author
-		if assignee == pr.Author {
+	var reviewerSlackIDs []string
+	reviewerSlackIDSet := make(map[string]struct{})
+
+	// Check each review target
+	for _, reviewer := range reviewTargets {
+		// Skip if reviewer is the author
+		if reviewer == pr.Author {
+			log.Printf("[PR #%d] Skipping author from review targets: %s", pr.Number, reviewer)
 			continue
 		}
 
-		status := reviewStatuses[assignee]
-		log.Printf("[PR #%d] Assignee %s status: '%s'", pr.Number, assignee, status)
+		status := reviewStatuses[reviewer]
+		log.Printf("[PR #%d] Review target %s status: '%s'", pr.Number, reviewer, status)
 
 		// 未レビュー(statusが空)の場合のみリマインド対象
 		if status != "" {
-			log.Printf("[PR #%d] Assignee %s has already reviewed (status: %s)", pr.Number, assignee, status)
+			log.Printf("[PR #%d] Review target %s has already reviewed (status: %s)", pr.Number, reviewer, status)
 			continue
 		}
 
-		// Get Slack ID for assignee
-		slackID, ok := c.userMapping[assignee]
+		// Get Slack ID for review target
+		slackID, ok := c.userMapping[reviewer]
 		if !ok {
-			log.Printf("[PR #%d] No Slack mapping found for GitHub user: %s", pr.Number, assignee)
+			log.Printf("[PR #%d] No Slack mapping found for GitHub user: %s", pr.Number, reviewer)
 			continue
 		}
 
+		if _, exists := reviewerSlackIDSet[slackID]; exists {
+			continue
+		}
+		reviewerSlackIDSet[slackID] = struct{}{}
 		reviewerSlackIDs = append(reviewerSlackIDs, slackID)
 	}
 
 	if len(reviewerSlackIDs) > 0 {
-		log.Printf("[PR #%d] Found %d unreviewed assignees", pr.Number, len(reviewerSlackIDs))
+		log.Printf("[PR #%d] Found %d unreviewed reviewers", pr.Number, len(reviewerSlackIDs))
 		return &view.PendingReviewPR{
 			Title:            pr.Title,
 			URL:              pr.URL,
@@ -167,6 +181,32 @@ func (c *ReminderController) processPR(ctx context.Context, pr model.PR, now tim
 		}, nil
 	}
 
-	log.Printf("[PR #%d] No unreviewed assignees found (or all approved/reviewed)", pr.Number)
+	log.Printf("[PR #%d] No unreviewed reviewers found (or all approved/reviewed/mapped)", pr.Number)
 	return nil, nil
+}
+
+func collectReviewTargets(assignees []string, requestedReviewers []string) []string {
+	targetMap := make(map[string]struct{})
+	var targets []string
+
+	addTarget := func(username string) {
+		if username == "" {
+			return
+		}
+		if _, exists := targetMap[username]; exists {
+			return
+		}
+		targetMap[username] = struct{}{}
+		targets = append(targets, username)
+	}
+
+	for _, assignee := range assignees {
+		addTarget(assignee)
+	}
+
+	for _, reviewer := range requestedReviewers {
+		addTarget(reviewer)
+	}
+
+	return targets
 }

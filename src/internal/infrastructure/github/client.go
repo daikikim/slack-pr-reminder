@@ -66,17 +66,29 @@ func (c *Client) FetchOpenPRs(ctx context.Context) ([]model.PR, error) {
 				assignees = append(assignees, assignee.GetLogin())
 			}
 
+			var requestedReviewers []string
+			for _, reviewer := range pr.RequestedReviewers {
+				requestedReviewers = append(requestedReviewers, reviewer.GetLogin())
+			}
+
 			allPRs = append(allPRs, model.PR{
-				ID:        pr.GetID(),
-				Number:    pr.GetNumber(),
-				Title:     pr.GetTitle(),
-				URL:       pr.GetHTMLURL(),
-				Author:    pr.GetUser().GetLogin(),
-				Assignees: assignees,
-				CreatedAt: pr.GetCreatedAt().Time,
+				ID:                 pr.GetID(),
+				Number:             pr.GetNumber(),
+				Title:              pr.GetTitle(),
+				URL:                pr.GetHTMLURL(),
+				Author:             pr.GetUser().GetLogin(),
+				Assignees:          assignees,
+				RequestedReviewers: requestedReviewers,
+				CreatedAt:          pr.GetCreatedAt().Time,
 			})
-			log.Printf("[GITHUB] Added PR #%d: %s (Author: %s, Created: %s)",
-				pr.GetNumber(), pr.GetTitle(), pr.GetUser().GetLogin(), pr.GetCreatedAt().Time.Format("2006-01-02 15:04:05"))
+			log.Printf("[GITHUB] Added PR #%d: %s (Author: %s, Assignees: %d, RequestedReviewers: %d, Created: %s)",
+				pr.GetNumber(),
+				pr.GetTitle(),
+				pr.GetUser().GetLogin(),
+				len(assignees),
+				len(requestedReviewers),
+				pr.GetCreatedAt().Time.Format("2006-01-02 15:04:05"),
+			)
 		}
 
 		if resp.NextPage == 0 {
