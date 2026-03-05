@@ -4,13 +4,14 @@ import "time"
 
 // PR represents a GitHub Pull Request.
 type PR struct {
-	ID        int64
-	Number    int
-	Title     string
-	URL       string
-	Author    string
-	Assignees []string
-	CreatedAt time.Time
+	ID                 int64
+	Number             int
+	Title              string
+	URL                string
+	Author             string
+	Assignees          []string
+	RequestedReviewers []string
+	CreatedAt          time.Time
 }
 
 // User represents a mapping between GitHub username and Slack ID.
